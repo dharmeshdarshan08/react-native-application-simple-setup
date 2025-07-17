@@ -24,7 +24,7 @@ const DOCUMENTS = [
   { id: '4', title: 'Profile Pic', image: require('../../src/assets/image/poto.png') }
 ];
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen() {
   const renderItem = ({ item }) => (
     <View style={styles.card}>
       <TouchableOpacity style={styles.moreBtn}>
@@ -56,24 +56,6 @@ export default function HomeScreen({ navigation }) {
         contentContainerStyle={styles.list}
         renderItem={renderItem}
       />
-
-      {/* Bottom Tab Bar */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => { /* Gallery */ }}>
-          <Icon name="grid" size={24} color="#fff" />
-          <Text style={styles.tabText}>Gallery</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem}
-          onPress={() => navigation.navigate('UploadScreen')}
-        >
-          <Icon name="upload" size={24} color="#fff" />
-          <Text style={styles.tabText}>Upload</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('ProfileScreen')}>
-          <Icon name="user" size={24} color="#fff" />
-          <Text style={styles.tabText}>Profile</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }

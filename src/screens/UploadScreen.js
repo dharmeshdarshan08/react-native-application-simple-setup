@@ -113,22 +113,6 @@ export default function UploadScreen({ navigation }) {
           <Text style={styles.submitText}>Upload</Text>
         </TouchableOpacity>
       </ScrollView>
-
-      {/* Bottom Tab Bar */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Home')}>
-          <Icon name="grid" size={24} color="#fff" />
-          <Text style={styles.tabText}>Gallery</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.tabItem, styles.activeTab]}>
-          <Icon name="upload" size={24} color="#fff" />
-          <Text style={styles.tabText}>Upload</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('ProfileScreen')}>
-          <Icon name="user" size={24} color="#fff" />
-          <Text style={styles.tabText}>Profile</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }

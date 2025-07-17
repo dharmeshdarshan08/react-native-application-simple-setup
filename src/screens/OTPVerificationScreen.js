@@ -42,7 +42,7 @@ export default function OTPVerificationScreen({ route, navigation }) {
     try {
     //   await dispatch(validateOtp({ phone, otp })).unwrap();
       
-     navigation.navigate('Home', { otp }); // or your main app screen
+     navigation.navigate('Main', { otp }); // or your main app screen
     } catch (err) {
       alert('Verification failed — ' + err);
     }
