@@ -16,7 +16,6 @@ const { width } = Dimensions.get('window');
 const NUM_INPUTS = 6;
 const GAP_SIZE = 6; // px between inputs
 const HORIZONTAL_PADDING = 24 * 2; // left + right padding
-// total gap width = GAP_SIZE * (NUM_INPUTS - 1)
 const inputWidth = (width - HORIZONTAL_PADDING - GAP_SIZE * (NUM_INPUTS - 1)) / NUM_INPUTS;
 
 export default function OTPVerificationScreen({ route, navigation }) {
@@ -24,86 +23,62 @@ export default function OTPVerificationScreen({ route, navigation }) {
   const dispatch = useDispatch();
   const { status: otpStatus, error } = useSelector(state => state.auth);
 
-  const [code, setCode] = useState(Array(NUM_INPUTS).fill(''));
-  const [fullOtp, setFullOtp] = useState(''); // Store complete OTP
-  const inputs = useRef(Array(NUM_INPUTS).fill(null));
+  // OTP stored as a single string, each digit in its place (eg. '123456')
+  const [otp, setOtp] = useState('');
+  const inputs = useRef([]);
 
+  // Focus the first input on mount if not filled
   useEffect(() => {
-    // auto-focus first field
-    inputs.current[0]?.focus();
+    if (!otp) inputs.current[0]?.focus();
   }, []);
 
-  // Effect to handle OTP distribution when fullOtp changes
-  useEffect(() => {
-    if (fullOtp && fullOtp.length >= NUM_INPUTS) {
-      const otpArray = fullOtp.slice(0, NUM_INPUTS).split('');
-      const newCode = Array(NUM_INPUTS).fill('');
-      
-      // Fill the array with the OTP digits
-      for (let i = 0; i < NUM_INPUTS; i++) {
-        newCode[i] = otpArray[i] || '';
-      }
-      
-      setCode(newCode);
-      
-      // Focus on the last input
+  // Handle digit change or paste
+  const handleChange = (text, idx) => {
+    let digits = text.replace(/\D/g, '');
+    if (digits.length > 1) {
+      // Pasted or autofilled (entire OTP)
+      setOtp(digits.slice(0, NUM_INPUTS));
       setTimeout(() => {
-        inputs.current[NUM_INPUTS - 1]?.focus();
-      }, 100);
-    }
-  }, [fullOtp]);
-
-  const handleChange = (text, index) => {
-    // Handle auto-fill case where complete OTP is pasted/filled
-    if (text.length > 1) {
-      const digits = text.replace(/\D/g, ''); // Remove non-digits
-      if (digits.length >= NUM_INPUTS) {
-        // Store the complete OTP
-        setFullOtp(digits);
-        return;
+        inputs.current[Math.min(digits.length, NUM_INPUTS) - 1]?.focus();
+      }, 50);
+    } else {
+      // Single digit input
+      let arr = otp.split('');
+      arr[idx] = digits;
+      const newOtp = arr.join('').slice(0, NUM_INPUTS);
+      setOtp(newOtp);
+      if (digits && idx < NUM_INPUTS - 1) {
+        inputs.current[idx + 1]?.focus();
       }
     }
+  };
 
-    // Handle single character input
-    const newCode = [...code];
-    const digit = text.replace(/\D/g, ''); // Only allow digits
-    newCode[index] = digit.slice(-1); // Take last digit only
-    setCode(newCode);
-    
-    // Update fullOtp with current state
-    const currentOtp = newCode.join('');
-    setFullOtp(currentOtp);
-    
-    // Move focus forward if a digit was entered
-    if (digit && index < NUM_INPUTS - 1) {
-      inputs.current[index + 1]?.focus();
+  // Handle backspace and auto focus back
+  const handleKeyPress = (e, idx) => {
+    if (e.nativeEvent.key === 'Backspace' && !otp[idx] && idx > 0) {
+      let arr = otp.split('');
+      arr[idx - 1] = '';
+      setOtp(arr.join('').slice(0, NUM_INPUTS));
+      inputs.current[idx - 1]?.focus();
     }
   };
 
-  const handleKeyPress = (e, index) => {
-    // Handle backspace to move focus backward
-    if (e.nativeEvent.key === 'Backspace' && !code[index] && index > 0) {
-      inputs.current[index - 1]?.focus();
-    }
-  };
-
+  // Submit OTP
   const handleVerify = async () => {
-    const otp = fullOtp || code.join('');
     try {
       await dispatch(validateOtp({ phone, otp })).unwrap();
-      navigation.navigate('Main'); // or your main app screen
+      navigation.navigate('Main'); // replace with your app's main screen
     } catch (err) {
       alert('Verification failed — ' + err);
     }
   };
 
+  // Resend code
   const handleResend = async () => {
     try {
       await dispatch(generateOtp({ phone })).unwrap();
       alert('Code resent to ' + phone);
-      // Clear the current code and fullOtp
-      setCode(Array(NUM_INPUTS).fill(''));
-      setFullOtp('');
+      setOtp('');
       setTimeout(() => {
         inputs.current[0]?.focus();
       }, 100);
@@ -112,7 +87,7 @@ export default function OTPVerificationScreen({ route, navigation }) {
     }
   };
 
-  const allFilled = code.every(d => d !== '') || fullOtp.length >= NUM_INPUTS;
+  const allFilled = otp.length === NUM_INPUTS;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -123,28 +98,22 @@ export default function OTPVerificationScreen({ route, navigation }) {
         </Text>
 
         <View style={styles.codeRow}>
-          {code.map((digit, i) => (
-            <TextInput
-              key={i}
-              ref={ref => inputs.current[i] = ref}
-              value={digit}
-              onChangeText={t => handleChange(t, i)}
-              onKeyPress={e => handleKeyPress(e, i)}
-              keyboardType="numeric"
-              maxLength={NUM_INPUTS}
-              style={[
-                styles.codeInput,
-                digit ? styles.codeInputFilled : null
-              ]}
-              selectTextOnFocus
-              autoComplete="sms-otp" // Android auto-fill
-              textContentType="oneTimeCode" // iOS auto-fill
-              importantForAutofill="yes" // Additional Android support
-            />
-          ))}
+          <TextInput
+            value={otp}
+            onChangeText={text => setOtp(text.replace(/\D/g, '').slice(0, NUM_INPUTS))}
+            keyboardType="number-pad"
+            maxLength={NUM_INPUTS}
+            style={[styles.codeInput, otp.length === NUM_INPUTS ? styles.codeInputFilled : null, { width: width - HORIZONTAL_PADDING }]}
+            selectTextOnFocus
+            autoComplete="sms-otp"
+            textContentType="oneTimeCode"
+            importantForAutofill="yes"
+            returnKeyType="done"
+            placeholder={Array(NUM_INPUTS).fill('•').join('')}
+          />
         </View>
 
-        {error && <Text style={styles.error}>{error}</Text>}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.resendRow}>
           <Text style={styles.resendText}>Didn't get OTP Code?</Text>
@@ -156,10 +125,10 @@ export default function OTPVerificationScreen({ route, navigation }) {
         <TouchableOpacity
           style={[
             styles.verifyBtn,
-            (!allFilled || otpStatus === 'loading') && styles.btnDisabled
+            (otp.length !== NUM_INPUTS || otpStatus === 'loading') && styles.btnDisabled
           ]}
           onPress={handleVerify}
-          disabled={!allFilled || otpStatus === 'loading'}
+          disabled={otp.length !== NUM_INPUTS || otpStatus === 'loading'}
         >
           <Text style={styles.verifyText}>
             {otpStatus === 'loading' ? 'Verifying…' : 'Verify'}

@@ -62,6 +62,64 @@ export const loadToken = createAsyncThunk(
   }
 );
 
+// Upload/Search Document Entry
+export const uploadDocumentEntry = createAsyncThunk(
+  'auth/uploadDocumentEntry',
+  async ({ payload }, { rejectWithValue }) => {
+    try {
+      const token = await AsyncStorage.getItem('jwt');
+      console.log("here ate upload Api ",token);
+      const resp = await axios.post(
+        'https://apis.allsoft.co/api/documentManagement//searchDocumentEntry',
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      return resp.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
+// Upload File Document Entry (multipart/form-data)
+export const uploadFileDocumentEntry = createAsyncThunk(
+  'auth/uploadFileDocumentEntry',
+  async ({ file, data }, { rejectWithValue }) => {
+    try {
+      const token = await AsyncStorage.getItem('jwt');
+      const formData = new FormData();
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name || 'document',
+        type: file.type || 'application/octet-stream',
+      });
+      formData.append('data', JSON.stringify(data));
+      const resp = await axios.post(
+        'https://apis.allsoft.co/api/documentManagement//saveDocumentEntry',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            token: token,
+          },
+        }
+      );
+      console.log("respone from upload ",resp);
+      if (resp.data && resp.data.status === false) {
+        return rejectWithValue(resp.data.message || 'Upload failed');
+      }
+      return resp.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
@@ -113,6 +171,28 @@ const authSlice = createSlice({
       })
       .addCase(loadToken.fulfilled, (state, action) => {
         state.token = action.payload;
+      })
+      .addCase(uploadDocumentEntry.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(uploadDocumentEntry.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+      })
+      .addCase(uploadDocumentEntry.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload || action.error.message;
+      })
+      .addCase(uploadFileDocumentEntry.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(uploadFileDocumentEntry.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+      })
+      .addCase(uploadFileDocumentEntry.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload || action.error.message;
       });
   }
 });
