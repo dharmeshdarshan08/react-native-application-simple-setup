@@ -13,9 +13,12 @@ import {
   Dimensions
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import { useDispatch } from 'react-redux';
+import { logout } from '../features/auth/authSlice';
 
 export default function ProfileScreen({ navigation }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const dispatch = useDispatch();
 
   const onToggleMode = () => setIsDarkMode(prev => !prev);
 
@@ -87,6 +90,10 @@ export default function ProfileScreen({ navigation }) {
           <Icon name="share-2" size={20} color="#3FB1C6" style={styles.rowIcon} />
           <Text style={styles.rowTitle}>Share This App</Text>
           <Icon name="chevron-right" size={20} color="#999" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.row} onPress={async () => { await dispatch(logout()); navigation.replace('SignIn'); }}>
+          <Icon name="log-out" size={20} color="#3FB1C6" style={styles.rowIcon} />
+          <Text style={styles.rowTitle}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

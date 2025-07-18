@@ -11,6 +11,7 @@ import {
   TouchableOpacity
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
+import { useSelector } from 'react-redux';
 
 // Sample data for demonstration
 const DOCUMENTS = [
@@ -25,6 +26,9 @@ const DOCUMENTS = [
 ];
 
 export default function HomeScreen() {
+  const token = useSelector(state => state.auth.token);
+  // For future authenticated requests, add this header:
+  // headers: { Authorization: `Bearer ${token}` }
   const renderItem = ({ item }) => (
     <View style={styles.card}>
       <TouchableOpacity style={styles.moreBtn}>

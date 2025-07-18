@@ -5,11 +5,16 @@ import {
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { generateOtp } from '../features/auth/authSlice';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function PhoneSignupScreen({ navigation }) {
   const [phone, setPhone] = useState('');
   const dispatch = useDispatch();
   const { status, error } = useSelector(state => state.auth);
+  
+const token =  AsyncStorage.getItem('jwt');
+console.log("token",token);
+
 
   const handleSendCode = async () => {
     try {

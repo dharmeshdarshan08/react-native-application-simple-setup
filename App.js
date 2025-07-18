@@ -7,6 +7,7 @@ import SplashScreen from './src/screens/SplashScreen';
 import SignupScreen from './src/screens/SignupScreen';
 import SignInScreen from './src/screens/SignInScreen';
 import OTPVerificationScreen from './src/screens/OTPVerificationScreen';
+import HomeScreen from './src/screens/HomeScreen';
 import MainTabs from './src/navigation/MainTabs';
 import { Provider } from 'react-redux';
 import { store } from './src/store/store';
@@ -24,6 +25,7 @@ export default function App() {
           <Stack.Screen name="SignIn" component={SignInScreen} />
           <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
           <Stack.Screen name="Main" component={MainTabs} />
+          <Stack.Screen name="Home" component={HomeScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </Provider>
