@@ -33,7 +33,7 @@ import { launchCamera } from 'react-native-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import { useSelector, useDispatch } from 'react-redux';
-import { uploadFileDocumentEntry } from '../features/auth/authSlice';
+import { uploadFileDocumentEntry, fetchDocumentTags } from '../features/auth/authSlice';
 import { useFocusEffect } from '@react-navigation/native';
 
 // constant arrays lifted out of the component
@@ -56,6 +56,7 @@ export default function UploadScreen() {
 
   const status = useSelector(s => s.auth.status);
   const error = useSelector(s => s.auth.error);
+  const tagsFromRedux = useSelector(s => s.auth.tags);
   const dispatch = useDispatch();
 
   // reset validation flag whenever screen is focused
@@ -63,13 +64,23 @@ export default function UploadScreen() {
     setSubmitAttempted(false);
   }, []));
 
-  // fetch tags once
+  // fetch tags once from Redux
   useEffect(() => {
-    fetch('https://your-api-endpoint.com/tags')
-      .then(r => r.json())
-      .then(d => setAvailableTags(d.tags))
-      .catch(console.warn);
-  }, []);
+    dispatch(fetchDocumentTags());
+  }, [dispatch]);
+
+  // Use tags from Redux as availableTags
+  useEffect(() => {
+    setAvailableTags(tagsFromRedux);
+  }, [tagsFromRedux]);
+
+  // Remove the old fetch for tags from the API
+  // useEffect(() => {
+  //   fetch('https://your-api-endpoint.com/tags')
+  //     .then(r => r.json())
+  //     .then(d => setAvailableTags(d.tags))
+  //     .catch(console.warn);
+  // }, []);
 
   // memoized filtered suggestions
   const filteredTags = useMemo(() => {
@@ -169,26 +180,40 @@ export default function UploadScreen() {
   const pickImage = useCallback(async () => {
     const hasPermission = await ensurePermissions();
     if (!hasPermission) return;
-    launchCamera({ mediaType: 'photo', saveToPhotos: false }, res => {
-      if (res.didCancel) return;
-      if (res.errorCode) {
-        if (res.errorCode === 'camera_unavailable') {
-          Alert.alert('Camera unavailable', 'Camera is not available on this device.');
-        } else if (res.errorCode === 'permission') {
-          Alert.alert('Permission denied', 'Camera permission denied.');
-        } else {
-          Alert.alert('Error', res.errorMessage || 'Unknown error occurred.');
+    launchCamera(
+      {
+        mediaType: 'photo',
+        saveToPhotos: false,
+        maxWidth: 1024, // compress width
+        maxHeight: 1024, // compress height
+        quality: 0.7, // compress quality (0.0 - 1.0)
+      },
+      res => {
+        if (res.didCancel) return;
+        if (res.errorCode) {
+          if (res.errorCode === 'camera_unavailable') {
+            Alert.alert('Camera unavailable', 'Camera is not available on this device.');
+          } else if (res.errorCode === 'permission') {
+            Alert.alert('Permission denied', 'Camera permission denied.');
+          } else {
+            Alert.alert('Error', res.errorMessage || 'Unknown error occurred.');
+          }
+          return;
         }
-        return;
+        if (!res.assets || !res.assets[0]) {
+          Alert.alert('Error', 'No photo captured.');
+          return;
+        }
+        const asset = res.assets[0];
+        // Check file size (e.g., 5MB limit)
+        if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+          Alert.alert('File too large', 'The captured image is too large. Please try again with a smaller image.');
+          return;
+        }
+        setFileName(asset.fileName || '');
+        setFileUri(asset.uri);
       }
-      if (!res.assets || !res.assets[0]) {
-        Alert.alert('Error', 'No photo captured.');
-        return;
-      }
-      const asset = res.assets[0];
-      setFileName(asset.fileName || '');
-      setFileUri(asset.uri);
-    });
+    );
   }, [ensurePermissions]);
 
   const showFileOptions = useCallback(() => {
@@ -320,29 +345,46 @@ export default function UploadScreen() {
 
         {/* Tags */}
         <Text style={styles.label}>Tags{submitAttempted && (!tags.length || tags.some(t => !t.trim())) && <Text style={styles.req}> *</Text>}</Text>
-        <View style={styles.tagWrap}>
-          {tags.map(t => <View key={t} style={styles.chip}><Text>{t}</Text></View>)}
-          <TextInput
-            style={styles.inputFlex}
-            placeholder="Add tag"
-            value={tagInput}
-            onChangeText={setTagInput}
-            onSubmitEditing={() => addTag(tagInput.trim())}
+        <View style={styles.tagInputContainer}>
+          <ScrollView
+            style={styles.tagScrollVertical}
+            contentContainerStyle={styles.tagWrap}
+            keyboardShouldPersistTaps="handled"
+          >
+            {tags.map(t => (
+              <View key={t} style={styles.chip}>
+                <Text>{t}</Text>
+                <TouchableOpacity onPress={() => setTags(ts => ts.filter(tag => tag !== t))}>
+                  <Text style={styles.removeTag}> × </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TextInput
+              style={styles.inputFlex}
+              placeholder="Add tag"
+              value={tagInput}
+              onChangeText={setTagInput}
+              onSubmitEditing={() => addTag(tagInput.trim())}
+              underlineColorAndroid="transparent"
+            />
+          </ScrollView>
+          {submitAttempted && (!tags.length || tags.some(t => !t.trim())) && (
+            <Text style={styles.error}>This field is required.</Text>
+          )}
+          <FlatList
+            data={filteredTags}
+            keyExtractor={i => i}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.suggestion} onPress={() => addTag(item)}>
+                <Text>{item}</Text>
+              </TouchableOpacity>
+            )}
+            style={styles.suggestions}
+            keyboardShouldPersistTaps="handled"
+            initialNumToRender={5}
+            nestedScrollEnabled={true}
           />
         </View>
-        {submitAttempted && (!tags.length || tags.some(t => !t.trim())) && <Text style={styles.error}>This field is required.</Text>}
-        <FlatList
-          data={filteredTags}
-          keyExtractor={i => i}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.suggestion} onPress={() => addTag(item)}>
-              <Text>{item}</Text>
-            </TouchableOpacity>
-          )}
-          style={styles.suggestions}
-          keyboardShouldPersistTaps="handled"
-          initialNumToRender={5}
-        />
 
         {/* Remarks */}
         <Text style={styles.label}>Remarks{submitAttempted && !remarks.trim() && <Text style={styles.req}> *</Text>}</Text>
@@ -391,15 +433,69 @@ const styles = StyleSheet.create({
   },
   pickerWrap: { borderWidth: 1, borderColor: '#CCC', borderRadius: 8, marginBottom: 16, backgroundColor: '#FAFAFA' },
   input: { height: 48, borderWidth: 1, borderColor: '#CCC', borderRadius: 8, paddingHorizontal: 12, backgroundColor: '#FAFAFA', marginBottom: 16, justifyContent: 'center' },
-  inputFlex: { flex: 1, height: 48, borderWidth: 1, borderColor: '#CCC', borderRadius: 8, paddingHorizontal: 12, backgroundColor: '#FAFAFA', marginBottom: 16 },
-  tagWrap: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', borderWidth: 1, borderColor: '#CCC', borderRadius: 8, padding: 8, backgroundColor: '#FAFAFA', marginBottom: 16 },
-  chip: { backgroundColor: '#E0E0E0', borderRadius: 16, paddingHorizontal: 8, paddingVertical: 4, marginRight: 8, marginBottom: 8 },
-  suggestions: { maxHeight: 100, marginBottom: 16 },
-  suggestion: { padding: 8, backgroundColor: '#FFF', borderBottomWidth: 1, borderColor: '#EEE' },
+  inputFlex: {
+    minWidth: 80,
+    flexShrink: 1,
+    height: 36,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    marginBottom: 0,
+    paddingHorizontal: 8,
+  },
+  tagWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap', // allow tags to wrap to new lines
+    alignItems: 'center',
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  chip: {
+    backgroundColor: '#E0E0E0',
+    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 8,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  suggestions: {
+    maxHeight: 200, // increased for better scrollability
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#EEE',
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 8,
+    zIndex: 10,
+  },
+  suggestion: {
+    padding: 8,
+    borderBottomWidth: 1,
+    borderColor: '#EEE',
+  },
   error: { color: 'red', fontSize: 12, marginBottom: 8, marginLeft: 4 },
   submitBtn: { height: 50, backgroundColor: '#3FB1C6', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
   loading: { opacity: 0.6 },
   submitTxt: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  removeTag: {
+    marginLeft: 4,
+    color: '#888',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  tagInputContainer: {
+    borderWidth: 1,
+    borderColor: '#CCC',
+    borderRadius: 8,
+    backgroundColor: '#FAFAFA',
+    marginBottom: 16,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  tagScrollVertical: {
+    maxHeight: 120, // or 150, adjust as needed
+  },
 fileButtonIcon: {
   width: 32,
   height: 32,

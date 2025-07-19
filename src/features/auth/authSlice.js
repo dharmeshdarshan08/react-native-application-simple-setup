@@ -123,6 +123,33 @@ export const uploadFileDocumentEntry = createAsyncThunk(
   }
 );
 
+export const fetchDocumentTags = createAsyncThunk(
+  'auth/fetchDocumentTags',
+  async (_, { rejectWithValue }) => {
+    try {
+      const token = await AsyncStorage.getItem('jwt');
+      const resp = await axios.post(
+        'https://apis.allsoft.co/api/documentManagement/documentTags',
+        { term: "" },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            token: token,
+          },
+        }
+      );
+      if (resp.data && resp.data.status === true) {
+        // Return array of labels
+        return resp.data.data.map(tag => tag.label);
+      } else {
+        return rejectWithValue(resp.data.message || 'Failed to fetch tags');
+      }
+    } catch (err) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
@@ -134,6 +161,7 @@ const authSlice = createSlice({
     user_name: null,
     roles: null,
     documents: [], // Add documents to state
+    tags: [], // <-- add tags array
   },
   reducers: {
     logout: (state) => {
@@ -197,6 +225,13 @@ const authSlice = createSlice({
       })
       .addCase(uploadFileDocumentEntry.rejected, (state, action) => {
         state.status = 'failed';
+        state.error = action.payload || action.error.message;
+      })
+      .addCase(fetchDocumentTags.fulfilled, (state, action) => {
+        state.tags = action.payload || [];
+      })
+      .addCase(fetchDocumentTags.rejected, (state, action) => {
+        state.tags = [];
         state.error = action.payload || action.error.message;
       });
   }
