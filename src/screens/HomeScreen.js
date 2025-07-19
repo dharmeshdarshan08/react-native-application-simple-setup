@@ -126,77 +126,77 @@ export default function HomeScreen() {
 
   // Download all files in filteredDocuments as a ZIP in Downloads (Android) or app folder (iOS)
   const handleDownloadAll = async () => {
-    // try {
-    //   setDownloadProgress(0);
-    //   setIsDownloading(true);
-    //   cancelDownloadRef.current = false;
-    //   // 1. Download all files to a temp folder in app's document directory
-    //   const tempDir = `${RNFS.DocumentDirectoryPath}/temp_downloads`;
-    //   await RNFS.mkdir(tempDir);
+    try {
+      setDownloadProgress(0);
+      setIsDownloading(true);
+      cancelDownloadRef.current = false;
+      // 1. Download all files to a temp folder in app's document directory
+      const tempDir = `${RNFS.DocumentDirectoryPath}/temp_downloads`;
+      await RNFS.mkdir(tempDir);
 
-    //   const files = filteredDocuments.filter(doc => doc.file_url);
-    //   const total = files.length;
-    //   let completed = 0;
-    //   let failed = 0;
-    //   const MAX_CONCURRENT_DOWNLOADS = 3;
-    //   // Helper to download a single file
-    //   const downloadFile = async (doc) => {
-    //     if (cancelDownloadRef.current) return null;
-    //     const fileUrl = doc.file_url;
-    //     const fileName = fileUrl.split('/').pop().split('?')[0];
-    //     const destPath = `${tempDir}/${fileName}`;
-    //     try {
-    //       const ret = RNFS.downloadFile({ fromUrl: fileUrl, toFile: destPath });
-    //       await ret.promise;
-    //       return destPath;
-    //     } catch (e) {
-    //       failed++;
-    //       return null;
-    //     } finally {
-    //       completed++;
-    //       if (completed % 2 === 0 || completed === total) {
-    //         setDownloadProgress(completed / total);
-    //         await new Promise(res => setTimeout(res, 10));
-    //       }
-    //     }
-    //   };
-    //   // Download in batches
-    //   let localFiles = [];
-    //   for (let i = 0; i < files.length; i += MAX_CONCURRENT_DOWNLOADS) {
-    //     if (cancelDownloadRef.current) break;
-    //     const batch = files.slice(i, i + MAX_CONCURRENT_DOWNLOADS);
-    //     await new Promise(res => InteractionManager.runAfterInteractions(res));
-    //     const results = await Promise.all(batch.map(downloadFile));
-    //     localFiles = localFiles.concat(results.filter(Boolean));
-    //   }
-    //   if (cancelDownloadRef.current) {
-    //     await RNFS.unlink(tempDir);
-    //     setDownloadProgress(null);
-    //     setIsDownloading(false);
-    //     cancelDownloadRef.current = false;
-    //     Alert.alert('Download canceled', 'The download was canceled.');
-    //     return;
-    //   }
-    //   // 2. Zip the files
-    //   const zipFileName = 'documents.zip';
-    //   const zipPath = `${tempDir}/${zipFileName}`;
-    //   await zip(tempDir, zipPath);
-    //   // 3. Move ZIP to Downloads (Android) or alert (iOS)
-    //   if (Platform.OS === 'android') {
-    //     const downloadsPath = `${RNFS.DownloadDirectoryPath}/${zipFileName}`;
-    //     await RNFS.moveFile(zipPath, downloadsPath);
-    //     Alert.alert('Download complete', `ZIP saved to Downloads: ${downloadsPath}${failed ? `\n${failed} files failed to download.` : ''}`);
-    //   } else {
-    //     Alert.alert('Download complete', `ZIP saved to app folder: ${zipPath}${failed ? `\n${failed} files failed to download.` : ''}`);
-    //   }
-    //   await RNFS.unlink(tempDir);
-    //   setDownloadProgress(null);
-    //   setIsDownloading(false);
-    // } catch (err) {
-    //   setDownloadProgress(null);
-    //   setIsDownloading(false);
+      const files = filteredDocuments.filter(doc => doc.file_url);
+      const total = files.length;
+      let completed = 0;
+      let failed = 0;
+      const MAX_CONCURRENT_DOWNLOADS = 3;
+      // Helper to download a single file
+      const downloadFile = async (doc) => {
+        if (cancelDownloadRef.current) return null;
+        const fileUrl = doc.file_url;
+        const fileName = fileUrl.split('/').pop().split('?')[0];
+        const destPath = `${tempDir}/${fileName}`;
+        try {
+          const ret = RNFS.downloadFile({ fromUrl: fileUrl, toFile: destPath });
+          await ret.promise;
+          return destPath;
+        } catch (e) {
+          failed++;
+          return null;
+        } finally {
+          completed++;
+          if (completed % 2 === 0 || completed === total) {
+            setDownloadProgress(completed / total);
+            await new Promise(res => setTimeout(res, 10));
+          }
+        }
+      };
+      // Download in batches
+      let localFiles = [];
+      for (let i = 0; i < files.length; i += MAX_CONCURRENT_DOWNLOADS) {
+        if (cancelDownloadRef.current) break;
+        const batch = files.slice(i, i + MAX_CONCURRENT_DOWNLOADS);
+        await new Promise(res => InteractionManager.runAfterInteractions(res));
+        const results = await Promise.all(batch.map(downloadFile));
+        localFiles = localFiles.concat(results.filter(Boolean));
+      }
+      if (cancelDownloadRef.current) {
+        await RNFS.unlink(tempDir);
+        setDownloadProgress(null);
+        setIsDownloading(false);
+        cancelDownloadRef.current = false;
+        Alert.alert('Download canceled', 'The download was canceled.');
+        return;
+      }
+      // 2. Zip the files
+      const zipFileName = 'documents.zip';
+      const zipPath = `${tempDir}/${zipFileName}`;
+      await zip(tempDir, zipPath);
+      // 3. Move ZIP to Downloads (Android) or alert (iOS)
+      if (Platform.OS === 'android') {
+        const downloadsPath = `${RNFS.DownloadDirectoryPath}/${zipFileName}`;
+        await RNFS.moveFile(zipPath, downloadsPath);
+        Alert.alert('Download complete', `ZIP saved to Downloads: ${downloadsPath}${failed ? `\n${failed} files failed to download.` : ''}`);
+      } else {
+        Alert.alert('Download complete', `ZIP saved to app folder: ${zipPath}${failed ? `\n${failed} files failed to download.` : ''}`);
+      }
+      await RNFS.unlink(tempDir);
+      setDownloadProgress(null);
+      setIsDownloading(false);
+    } catch (err) {
+      setDownloadProgress(null);
+      setIsDownloading(false);
       Alert.alert('Download failed', err.message);
-    // }
+    }
   };
 
   // Date picker handlers

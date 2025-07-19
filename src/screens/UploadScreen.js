@@ -20,6 +20,7 @@ import {
   PermissionsAndroid,
   ActivityIndicator,
   Image,
+  Linking, // <-- add this
 } from 'react-native';
 import {
   pick,
@@ -31,7 +32,6 @@ import {
 import { launchCamera } from 'react-native-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
-import Icon from 'react-native-vector-icons/Feather';
 import { useSelector, useDispatch } from 'react-redux';
 import { uploadFileDocumentEntry } from '../features/auth/authSlice';
 import { useFocusEffect } from '@react-navigation/native';
@@ -86,21 +86,62 @@ export default function UploadScreen() {
 
   const ensurePermissions = useCallback(async () => {
     if (Platform.OS !== 'android') return true;
-    const toRequest = [PermissionsAndroid.PERMISSIONS.CAMERA];
+    const cameraPerm = PermissionsAndroid.PERMISSIONS.CAMERA;
+    const storagePerm = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+    const toRequest = [cameraPerm];
     if (Platform.Version < 29) {
-      toRequest.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
+      toRequest.push(storagePerm);
     }
-    const results = await PermissionsAndroid.requestMultiple(toRequest);
-    const okCamera = results[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
-    const okStorage = toRequest.includes(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE)
-      ? results[PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE] === PermissionsAndroid.RESULTS.GRANTED
-      : true;
-    if (!okCamera || !okStorage) {
-      Alert.alert(
-        'Permissions required',
-        'Camera—and storage on older Android—permission is required to take and save photos.'
-      );
-      return false;
+    // Check current status
+    const statuses = await PermissionsAndroid.check(cameraPerm);
+    if (!statuses) {
+      // Show rationale if needed
+      const rationale = {
+        title: 'Camera Permission',
+        message: 'App needs camera access to take photos.',
+        buttonPositive: 'OK',
+      };
+      const granted = await PermissionsAndroid.request(cameraPerm, rationale);
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        if (granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+          Alert.alert(
+            'Permission required',
+            'Camera permission is permanently denied. Please enable it from app settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ]
+          );
+        } else {
+          Alert.alert('Permission required', 'Camera permission is required to take photos.');
+        }
+        return false;
+      }
+    }
+    if (toRequest.includes(storagePerm)) {
+      const storageStatus = await PermissionsAndroid.check(storagePerm);
+      if (!storageStatus) {
+        const granted = await PermissionsAndroid.request(storagePerm, {
+          title: 'Storage Permission',
+          message: 'App needs storage access to save photos.',
+          buttonPositive: 'OK',
+        });
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          if (granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+            Alert.alert(
+              'Permission required',
+              'Storage permission is permanently denied. Please enable it from app settings.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ]
+            );
+          } else {
+            Alert.alert('Permission required', 'Storage permission is required to save photos.');
+          }
+          return false;
+        }
+      }
     }
     return true;
   }, []);
@@ -126,11 +167,22 @@ export default function UploadScreen() {
   }, []);
 
   const pickImage = useCallback(async () => {
-    if (!(await ensurePermissions())) return;
+    const hasPermission = await ensurePermissions();
+    if (!hasPermission) return;
     launchCamera({ mediaType: 'photo', saveToPhotos: false }, res => {
       if (res.didCancel) return;
       if (res.errorCode) {
-        console.warn(res.errorMessage);
+        if (res.errorCode === 'camera_unavailable') {
+          Alert.alert('Camera unavailable', 'Camera is not available on this device.');
+        } else if (res.errorCode === 'permission') {
+          Alert.alert('Permission denied', 'Camera permission denied.');
+        } else {
+          Alert.alert('Error', res.errorMessage || 'Unknown error occurred.');
+        }
+        return;
+      }
+      if (!res.assets || !res.assets[0]) {
+        Alert.alert('Error', 'No photo captured.');
         return;
       }
       const asset = res.assets[0];
@@ -228,7 +280,13 @@ export default function UploadScreen() {
             source={require('../assets/icon/file.png')}
             style={styles.fileButtonIcon}
           />
-          <Text style={styles.fileBtnTxt}>{fileName || 'Choose File'}</Text>
+          <Text
+            style={styles.fileBtnTxt}
+            numberOfLines={1}
+            ellipsizeMode="middle"
+          >
+            {fileName || 'Choose File'}
+          </Text>
         </TouchableOpacity>
         {submitAttempted && !fileUri && <Text style={styles.error}>This field is required.</Text>}
 
@@ -324,7 +382,13 @@ const styles = StyleSheet.create({
   label: { fontSize: 14, color: '#555', marginBottom: 6 },
   req: { color: 'red', fontWeight: 'bold' },
   fileButton: { flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: 1, borderColor: '#CCC', borderRadius: 8, marginBottom: 16, backgroundColor: '#FAFAFA' },
-  fileBtnTxt: { marginLeft: 8, color: '#333', fontSize: 14 },
+  fileBtnTxt: {
+    marginLeft: 8,
+    color: '#333',
+    fontSize: 14,
+    flexShrink: 1,
+    minWidth: 0,
+  },
   pickerWrap: { borderWidth: 1, borderColor: '#CCC', borderRadius: 8, marginBottom: 16, backgroundColor: '#FAFAFA' },
   input: { height: 48, borderWidth: 1, borderColor: '#CCC', borderRadius: 8, paddingHorizontal: 12, backgroundColor: '#FAFAFA', marginBottom: 16, justifyContent: 'center' },
   inputFlex: { flex: 1, height: 48, borderWidth: 1, borderColor: '#CCC', borderRadius: 8, paddingHorizontal: 12, backgroundColor: '#FAFAFA', marginBottom: 16 },
