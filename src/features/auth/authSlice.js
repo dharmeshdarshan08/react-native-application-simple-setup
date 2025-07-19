@@ -63,24 +63,27 @@ export const loadToken = createAsyncThunk(
 );
 
 // Upload/Search Document Entry
-export const uploadDocumentEntry = createAsyncThunk(
-  'auth/uploadDocumentEntry',
-  async ({ payload }, { rejectWithValue }) => {
+export const searchDocumentEntry = createAsyncThunk(
+  'auth/searchDocumentEntry',
+  async (payload, { rejectWithValue }) => {
+    console.log('searchDocumentEntry payload:', payload);
     try {
       const token = await AsyncStorage.getItem('jwt');
-      console.log("here ate upload Api ",token);
+      console.log('JWT token:', token);
       const resp = await axios.post(
         'https://apis.allsoft.co/api/documentManagement//searchDocumentEntry',
         payload,
         {
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
+            token: token,
           },
         }
       );
+      console.log('API response:', resp?.data);
       return resp.data;
     } catch (err) {
+      console.log('API error:', err?.response?.data || err.message);
       return rejectWithValue(err.response?.data || err.message);
     }
   }
@@ -130,6 +133,7 @@ const authSlice = createSlice({
     user_id: null,
     user_name: null,
     roles: null,
+    documents: [], // Add documents to state
   },
   reducers: {
     logout: (state) => {
@@ -172,14 +176,15 @@ const authSlice = createSlice({
       .addCase(loadToken.fulfilled, (state, action) => {
         state.token = action.payload;
       })
-      .addCase(uploadDocumentEntry.pending, (state) => {
+      .addCase(searchDocumentEntry.pending, (state) => {
         state.status = 'loading';
         state.error = null;
       })
-      .addCase(uploadDocumentEntry.fulfilled, (state, action) => {
+      .addCase(searchDocumentEntry.fulfilled, (state, action) => {
         state.status = 'succeeded';
+        state.documents = action.payload.data || [];
       })
-      .addCase(uploadDocumentEntry.rejected, (state, action) => {
+      .addCase(searchDocumentEntry.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload || action.error.message;
       })
