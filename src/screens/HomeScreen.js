@@ -16,7 +16,8 @@ import {
   Alert,
   ProgressBarAndroid,
   ProgressViewIOS,
-  InteractionManager
+  InteractionManager,
+  ScrollView
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { searchDocumentEntry } from '../features/auth/authSlice';
@@ -25,6 +26,7 @@ import { Picker } from '@react-native-picker/picker';
 import RNFS from 'react-native-fs';
 import { zip } from 'react-native-zip-archive';
 import Pdf from 'react-native-pdf'; // for PDF preview
+import RNFetchBlob from 'react-native-blob-util';
 
 export default function HomeScreen() {
   const dispatch = useDispatch();
@@ -45,6 +47,8 @@ export default function HomeScreen() {
   // Preview modal state
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [localPdfPath, setLocalPdfPath] = useState(null); // for local PDF preview
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
 
   // Progress state for download all
   const [downloadProgress, setDownloadProgress] = useState(null); // null = not downloading, 0-1 = progress
@@ -87,6 +91,48 @@ export default function HomeScreen() {
     return filtered;
   }, [documents, majorHead, minorHead, tags, uploadedBy, fromDate, toDate]);
 
+  const testPDFDoc = {
+    document_id: 'test-pdf-1',
+    major_head: 'Test',
+    minor_head: 'PDF1',
+    file_url: 'https://abvv.ac.in/api/uploads/notifications/1721134105290.pdf',
+    tags: [{ tag_name: 'test' }],
+    uploaded_by: 'tester',
+    document_date: '2024-07-16',
+  };
+  const testPDFDoc2 = {
+    document_id: 'test-pdf-2',
+    major_head: 'Test',
+    minor_head: 'PDF2',
+    file_url: 'https://abvv.ac.in/api/uploads/courses/1725257664505.pdf',
+    tags: [{ tag_name: 'course' }],
+    uploaded_by: 'tester',
+    document_date: '2024-07-17',
+  };
+  const testPDFDoc3 = {
+    document_id: 'test-pdf-3',
+    major_head: 'Test',
+    minor_head: 'PDF3',
+    file_url: 'https://abvv.ac.in/api/uploads/courses/1725257906418.pdf',
+    tags: [{ tag_name: 'course' }],
+    uploaded_by: 'tester',
+    document_date: '2024-07-18',
+  };
+  const testPDFDoc4 = {
+    document_id: 'test-pdf-4',
+    major_head: 'Test',
+    minor_head: 'PDF4',
+    file_url: 'https://abvv.ac.in/api/uploads/notifications/1721134043980.pdf',
+    tags: [{ tag_name: 'notification' }],
+    uploaded_by: 'tester',
+    document_date: '2024-07-19',
+  };
+
+  const testDocuments = useMemo(() => {
+    // Prepend the test PDFs to the documents list for testing
+    return [testPDFDoc, testPDFDoc2, testPDFDoc3, testPDFDoc4, ...documents];
+  }, [documents]);
+
   // Fetch all documents on mount
   useEffect(() => {
     const payload = {
@@ -104,99 +150,143 @@ export default function HomeScreen() {
     dispatch(searchDocumentEntry(payload));
   }, [dispatch]);
 
-  // File preview logic
-  const handlePreview = (doc) => {
-    setPreviewDoc(doc);
-    setPreviewVisible(true);
-  };
-
-  // File download logic
-  const handleDownload = async (doc) => {
+ // Fixed handlePreview function
+const handlePreview = async (doc) => {
+  setPreviewDoc(doc);
+  setPreviewVisible(true);
+  
+  // If it's a PDF, download it first
+  if (doc.file_url && doc.file_url.match(/\.pdf$/i)) {
+    setIsPdfLoading(true);
     try {
-      const fileUrl = doc.file_url;
-      const fileName = fileUrl.split('/').pop().split('?')[0];
-      // const destPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
-      // const ret = RNFS.downloadFile({ fromUrl: fileUrl, toFile: destPath });
-      await ret.promise;
-      Alert.alert('Download complete', `Saved to ${destPath}`);
-    } catch (err) {
-      Alert.alert('Download failed', err.message);
+      const localPath = RNFetchBlob.fs.dirs.DocumentDir + '/temp_preview.pdf';
+      
+      // Updated configuration to fix SSL issues
+      await RNFetchBlob.config({
+        path: localPath,
+        // Remove trusty: true as it's causing the SSL issue
+        // Add these configurations instead:
+        trusty: false, // Explicitly set to false
+        indicator: true, // Show download indicator
+        overwrite: true, // Overwrite existing file
+      }).fetch('GET', doc.file_url, {
+        // Add headers if needed for authentication
+        // 'Authorization': 'Bearer your-token',
+        'Accept': 'application/pdf',
+      });
+      
+      setLocalPdfPath('file://' + localPath);
+    } catch (e) {
+      console.log('PDF Download Error:', e);
+      Alert.alert('PDF Download Error', 'Failed to download PDF for preview. Please check your internet connection.');
+      setLocalPdfPath(null);
     }
-  };
+    setIsPdfLoading(false);
+  } else {
+    setLocalPdfPath(null);
+  }
+};
+
+// Also fix your handleDownload function to avoid similar issues:
+const handleDownloadFixed = async (doc) => {
+  try {
+    const fileUrl = doc.file_url;
+    const fileName = fileUrl.split('/').pop().split('?')[0];
+    const destPath = `${RNFetchBlob.fs.dirs.DownloadDir}/${fileName}`;
+    
+    await RNFetchBlob.config({
+      path: destPath,
+      trusty: false, // Fix SSL issue here too
+      indicator: true,
+      overwrite: true,
+      addAndroidDownloads: {
+        useDownloadManager: true,
+        notification: true,
+        path: destPath,
+        description: 'Downloading document...',
+      }
+    }).fetch('GET', fileUrl);
+    
+    Alert.alert('Download complete', `File saved successfully`);
+  } catch (err) {
+    console.log('Download error:', err);
+    Alert.alert('Download failed', 'Unable to download file. Please try again.');
+  }
+};
 
   // Download all files in filteredDocuments as a ZIP in Downloads (Android) or app folder (iOS)
   const handleDownloadAll = async () => {
-    try {
-      setDownloadProgress(0);
-      setIsDownloading(true);
-      cancelDownloadRef.current = false;
-      // 1. Download all files to a temp folder in app's document directory
-      const tempDir = `${RNFS.DocumentDirectoryPath}/temp_downloads`;
-      await RNFS.mkdir(tempDir);
+    // try {
+    //   setDownloadProgress(0);
+    //   setIsDownloading(true);
+    //   cancelDownloadRef.current = false;
+    //   // 1. Download all files to a temp folder in app's document directory
+    //   const tempDir = `${RNFS.DocumentDirectoryPath}/temp_downloads`;
+    //   await RNFS.mkdir(tempDir);
 
-      const files = filteredDocuments.filter(doc => doc.file_url);
-      const total = files.length;
-      let completed = 0;
-      let failed = 0;
-      const MAX_CONCURRENT_DOWNLOADS = 3;
-      // Helper to download a single file
-      const downloadFile = async (doc) => {
-        if (cancelDownloadRef.current) return null;
-        const fileUrl = doc.file_url;
-        const fileName = fileUrl.split('/').pop().split('?')[0];
-        const destPath = `${tempDir}/${fileName}`;
-        try {
-          const ret = RNFS.downloadFile({ fromUrl: fileUrl, toFile: destPath });
-          await ret.promise;
-          return destPath;
-        } catch (e) {
-          failed++;
-          return null;
-        } finally {
-          completed++;
-          if (completed % 2 === 0 || completed === total) {
-            setDownloadProgress(completed / total);
-            await new Promise(res => setTimeout(res, 10));
-          }
-        }
-      };
-      // Download in batches
-      let localFiles = [];
-      for (let i = 0; i < files.length; i += MAX_CONCURRENT_DOWNLOADS) {
-        if (cancelDownloadRef.current) break;
-        const batch = files.slice(i, i + MAX_CONCURRENT_DOWNLOADS);
-        await new Promise(res => InteractionManager.runAfterInteractions(res));
-        const results = await Promise.all(batch.map(downloadFile));
-        localFiles = localFiles.concat(results.filter(Boolean));
-      }
-      if (cancelDownloadRef.current) {
-        await RNFS.unlink(tempDir);
-        setDownloadProgress(null);
-        setIsDownloading(false);
-        cancelDownloadRef.current = false;
-        Alert.alert('Download canceled', 'The download was canceled.');
-        return;
-      }
-      // 2. Zip the files
-      const zipFileName = 'documents.zip';
-      const zipPath = `${tempDir}/${zipFileName}`;
-      await zip(tempDir, zipPath);
-      // 3. Move ZIP to Downloads (Android) or alert (iOS)
-      if (Platform.OS === 'android') {
-        const downloadsPath = `${RNFS.DownloadDirectoryPath}/${zipFileName}`;
-        await RNFS.moveFile(zipPath, downloadsPath);
-        Alert.alert('Download complete', `ZIP saved to Downloads: ${downloadsPath}${failed ? `\n${failed} files failed to download.` : ''}`);
-      } else {
-        Alert.alert('Download complete', `ZIP saved to app folder: ${zipPath}${failed ? `\n${failed} files failed to download.` : ''}`);
-      }
-      await RNFS.unlink(tempDir);
-      setDownloadProgress(null);
-      setIsDownloading(false);
-    } catch (err) {
-      setDownloadProgress(null);
-      setIsDownloading(false);
-      Alert.alert('Download failed', err.message);
-    }
+    //   const files = filteredDocuments.filter(doc => doc.file_url);
+    //   const total = files.length;
+    //   let completed = 0;
+    //   let failed = 0;
+    //   const MAX_CONCURRENT_DOWNLOADS = 3;
+    //   // Helper to download a single file
+    //   const downloadFile = async (doc) => {
+    //     if (cancelDownloadRef.current) return null;
+    //     const fileUrl = doc.file_url;
+    //     const fileName = fileUrl.split('/').pop().split('?')[0];
+    //     const destPath = `${tempDir}/${fileName}`;
+    //     try {
+    //       const ret = RNFS.downloadFile({ fromUrl: fileUrl, toFile: destPath });
+    //       await ret.promise;
+    //       return destPath;
+    //     } catch (e) {
+    //       failed++;
+    //       return null;
+    //     } finally {
+    //       completed++;
+    //       if (completed % 2 === 0 || completed === total) {
+    //         setDownloadProgress(completed / total);
+    //         await new Promise(res => setTimeout(res, 10));
+    //       }
+    //     }
+    //   };
+    //   // Download in batches
+    //   let localFiles = [];
+    //   for (let i = 0; i < files.length; i += MAX_CONCURRENT_DOWNLOADS) {
+    //     if (cancelDownloadRef.current) break;
+    //     const batch = files.slice(i, i + MAX_CONCURRENT_DOWNLOADS);
+    //     await new Promise(res => InteractionManager.runAfterInteractions(res));
+    //     const results = await Promise.all(batch.map(downloadFile));
+    //     localFiles = localFiles.concat(results.filter(Boolean));
+    //   }
+    //   if (cancelDownloadRef.current) {
+    //     await RNFS.unlink(tempDir);
+    //     setDownloadProgress(null);
+    //     setIsDownloading(false);
+    //     cancelDownloadRef.current = false;
+    //     Alert.alert('Download canceled', 'The download was canceled.');
+    //     return;
+    //   }
+    //   // 2. Zip the files
+    //   const zipFileName = 'documents.zip';
+    //   const zipPath = `${tempDir}/${zipFileName}`;
+    //   await zip(tempDir, zipPath);
+    //   // 3. Move ZIP to Downloads (Android) or alert (iOS)
+    //   if (Platform.OS === 'android') {
+    //     const downloadsPath = `${RNFS.DownloadDirectoryPath}/${zipFileName}`;
+    //     await RNFS.moveFile(zipPath, downloadsPath);
+    //     Alert.alert('Download complete', `ZIP saved to Downloads: ${downloadsPath}${failed ? `\n${failed} files failed to download.` : ''}`);
+    //   } else {
+    //     Alert.alert('Download complete', `ZIP saved to app folder: ${zipPath}${failed ? `\n${failed} files failed to download.` : ''}`);
+    //   }
+    //   await RNFS.unlink(tempDir);
+    //   setDownloadProgress(null);
+    //   setIsDownloading(false);
+    // } catch (err) {
+    //   setDownloadProgress(null);
+    //   setIsDownloading(false);
+      Alert.alert('Download All under Maintenance', 'This feature is currently under maintenance.');
+    // }
   };
 
   // Date picker handlers
@@ -215,6 +305,28 @@ export default function HomeScreen() {
     Professional: ['Accounts', 'HR', 'IT', 'Finance'],
   };
 
+  // Add refreshing state
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Add handleRefresh function
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    const payload = {
+      major_head: '',
+      minor_head: '',
+      from_date: '',
+      to_date: '',
+      tags: [{ "tag_name": "" }, { "tag_name": "" }],
+      uploaded_by: '',
+      start: 0,
+      length: 200,
+      filterId: '',
+      search: { value: '' },
+    };
+    await dispatch(searchDocumentEntry(payload));
+    setRefreshing(false);
+  };
+
   // Render document item
   const renderItem = ({ item }) => (
     <View style={styles.card}>
@@ -228,7 +340,7 @@ export default function HomeScreen() {
       <Text style={styles.cardText} numberOfLines={1} ellipsizeMode="tail">
         {item.major_head} - {item.minor_head}
       </Text>
-      <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownload(item)}>
+      <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownloadFixed(item)}>
         <Image
             source={require('../../src/assets/icon/download.png')}
             style={{ width: 8, height: 8 }}
@@ -238,28 +350,86 @@ export default function HomeScreen() {
     </View>
   );
 
+  // Reset local PDF path when closing preview
+  const closePreview = () => {
+    setPreviewVisible(false);
+    setLocalPdfPath(null);
+  };
+
   // Render preview modal
   const renderPreview = () => {
     if (!previewDoc) return null;
     const isImage = previewDoc.file_url.match(/\.(jpg|jpeg|png|gif)$/i);
     const isPDF = previewDoc.file_url.match(/\.pdf$/i);
     return (
-      <Modal visible={previewVisible} animationType="slide" onRequestClose={() => setPreviewVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' }}>
-          <TouchableOpacity onPress={() => setPreviewVisible(false)} style={{ position: 'absolute', top: 40, right: 20, zIndex: 2 }}>
-            <Image
-            source={require('../../src/assets/icon/close.png')}
-            style={{ width: 32, height: 32 }}
-          />
-          </TouchableOpacity>
-          <Text style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>{previewDoc.major_head} - {previewDoc.minor_head}</Text>
-          {isImage ? (
-            <Image source={{ uri: previewDoc.file_url }} style={{ width: 300, height: 400, resizeMode: 'contain' }} />
-          ) : isPDF ? (
-            <Pdf source={{ uri: previewDoc.file_url }} style={{ width: 300, height: 400 }} />
-          ) : (
-            <Text>Preview not available for this file type.</Text>
-          )}
+      <Modal visible={previewVisible} animationType="fade" onRequestClose={closePreview} transparent>
+        <View style={styles.previewOverlayImproved}>
+          <View style={styles.previewContainerImproved}>
+            {/* Header */}
+            <View style={styles.previewHeaderImproved}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.previewTitleImproved} numberOfLines={1} ellipsizeMode="tail">
+                  {previewDoc.major_head} - {previewDoc.minor_head}
+                </Text>
+                <Text style={styles.previewMetaImproved}>
+                  Uploaded by: {previewDoc.uploaded_by || 'N/A'} | {previewDoc.document_date || ''}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={closePreview} style={styles.previewCloseBtnImproved}>
+                <Image
+                  source={require('../../src/assets/icon/close.png')}
+                  style={{ width: 32, height: 32 }}
+                />
+              </TouchableOpacity>
+            </View>
+            {/* Preview Content (Scrollable) */}
+            <ScrollView
+              contentContainerStyle={styles.previewScrollContent}
+              style={{ flex: 1 }}
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.previewContentImproved}>
+                {isImage ? (
+                  <Image
+                    source={{ uri: previewDoc.file_url }}
+                    style={styles.previewImageImproved}
+                    resizeMode="contain"
+                  />
+                ) : isPDF ? (
+                  isPdfLoading ? (
+                    <ActivityIndicator size="large" color="#3FB1C6" style={{ marginTop: 40 }} />
+                  ) : localPdfPath ? (
+                    <Pdf
+                      source={{ uri: localPdfPath }}
+                      style={styles.previewPdfImproved}
+                      onError={error => {
+                        console.log('PDF load error:', error);
+                        Alert.alert('PDF Error', error.message || 'Failed to load PDF');
+                      }}
+                    />
+                  ) : (
+                    <Text style={styles.previewUnavailableImproved}>Preview not available for this file type.</Text>
+                  )
+                ) : (
+                  <Text style={styles.previewUnavailableImproved}>Preview not available for this file type.</Text>
+                )}
+              </View>
+            </ScrollView>
+            {/* Footer with Download Button */}
+            <View style={styles.previewFooterImproved}>
+              <TouchableOpacity
+                style={styles.previewDownloadBtnImproved}
+                onPress={() => handleDownloadFixed(previewDoc)}
+              >
+                <Image
+                  source={require('../../src/assets/icon/download.png')}
+                  style={{ width: 22, height: 22, marginRight: 10 }}
+                />
+                <Text style={styles.previewDownloadTextImproved}>Download</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     );
@@ -388,11 +558,13 @@ export default function HomeScreen() {
         <ActivityIndicator size="large" color="#3FB1C6" style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={filteredDocuments}
+          data={testDocuments}
           keyExtractor={item => item.document_id?.toString() || Math.random().toString()}
           numColumns={2}
           contentContainerStyle={styles.list}
           renderItem={renderItem}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
         />
       )}
     </SafeAreaView>
@@ -620,5 +792,206 @@ const styles = StyleSheet.create({
   },
   downloadAllBtn: {
     backgroundColor: '#2D99A6',
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    width: '92%',
+    maxWidth: 400,
+    minHeight: 420,
+    maxHeight: '90%',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 8,
+    backgroundColor: '#F7FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  previewTitle: {
+    fontWeight: 'bold',
+    fontSize: 18,
+    color: '#222',
+    marginBottom: 2,
+  },
+  previewMeta: {
+    fontSize: 12,
+    color: '#888',
+  },
+  previewCloseBtn: {
+    marginLeft: 12,
+    padding: 4,
+  },
+  previewContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 300,
+    padding: 12,
+  },
+  previewImage: {
+    width: 260,
+    height: 340,
+    resizeMode: 'contain',
+    borderRadius: 10,
+    backgroundColor: '#f2f2f2',
+  },
+  previewPdf: {
+    width: 260,
+    height: 340,
+    borderRadius: 10,
+    backgroundColor: '#f2f2f2',
+  },
+  previewUnavailable: {
+    color: '#c0392b',
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 40,
+  },
+  previewFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    padding: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    backgroundColor: '#F7FAFC',
+  },
+  previewDownloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3FB1C6',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    elevation: 2,
+  },
+  previewDownloadText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  previewOverlayImproved: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewContainerImproved: {
+    backgroundColor: '#fff',
+    borderRadius: 28,
+    width: '96%',
+    maxWidth: 480,
+    minHeight: 480,
+    maxHeight: '92%',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 16,
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+  },
+  previewHeaderImproved: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 26,
+    paddingTop: 26,
+    paddingBottom: 12,
+    backgroundColor: '#F7FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  previewTitleImproved: {
+    fontWeight: 'bold',
+    fontSize: 21,
+    color: '#222',
+    marginBottom: 3,
+  },
+  previewMetaImproved: {
+    fontSize: 13,
+    color: '#888',
+  },
+  previewCloseBtnImproved: {
+    marginLeft: 18,
+    padding: 6,
+  },
+  previewScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 10,
+    minHeight: 200,
+  },
+  previewContentImproved: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 200,
+    maxHeight: 400,
+    padding: 8,
+  },
+  previewImageImproved: {
+    width: '100%',
+    maxWidth: 340,
+    aspectRatio: 3/4,
+    height: undefined,
+    borderRadius: 14,
+    backgroundColor: '#f2f2f2',
+    alignSelf: 'center',
+  },
+  previewPdfImproved: {
+    width: '100%',
+    maxWidth: 340,
+    aspectRatio: 3/4,
+    height: undefined,
+    borderRadius: 14,
+    backgroundColor: '#f2f2f2',
+    alignSelf: 'center',
+  },
+  previewUnavailableImproved: {
+    color: '#c0392b',
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 40,
+  },
+  previewFooterImproved: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    backgroundColor: '#F7FAFC',
+  },
+  previewDownloadBtnImproved: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3FB1C6',
+    borderRadius: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    elevation: 3,
+  },
+  previewDownloadTextImproved: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 17,
   },
 });
