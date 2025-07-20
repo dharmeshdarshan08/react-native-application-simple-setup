@@ -62,35 +62,7 @@ export default function HomeScreen() {
     setDownloadProgress(null);
   };
 
-  // Memoized filtered documents
-  const filteredDocuments = useMemo(() => {
-    let filtered = documents;
-    if (majorHead) filtered = filtered.filter(doc => (doc.major_head || '').toLowerCase().includes(majorHead.toLowerCase()));
-    if (minorHead) filtered = filtered.filter(doc => (doc.minor_head || '').toLowerCase().includes(minorHead.toLowerCase()));
-    if (uploadedBy) filtered = filtered.filter(doc => (doc.uploaded_by || '').toLowerCase().includes(uploadedBy.toLowerCase()));
-    if (tags) {
-      const tagArr = tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
-      if (tagArr.length > 0) {
-        filtered = filtered.filter(doc =>
-          (doc.tags || []).some(tagObj => tagArr.includes((tagObj.tag_name || '').toLowerCase()))
-        );
-      }
-    }
-    if (fromDate) {
-      filtered = filtered.filter(doc => {
-        if (!doc.document_date) return false;
-        return new Date(doc.document_date) >= new Date(fromDate);
-      });
-    }
-    if (toDate) {
-      filtered = filtered.filter(doc => {
-        if (!doc.document_date) return false;
-        return new Date(doc.document_date) <= new Date(toDate);
-      });
-    }
-    return filtered;
-  }, [documents, majorHead, minorHead, tags, uploadedBy, fromDate, toDate]);
-
+  // Demo PDF document for testing
   const testPDFDoc = {
     document_id: 'test-pdf-1',
     major_head: 'Test',
@@ -109,85 +81,97 @@ export default function HomeScreen() {
     uploaded_by: 'tester',
     document_date: '2024-07-17',
   };
-  const testPDFDoc3 = {
-    document_id: 'test-pdf-3',
-    major_head: 'Test',
-    minor_head: 'PDF3',
-    file_url: 'https://abvv.ac.in/api/uploads/courses/1725257906418.pdf',
-    tags: [{ tag_name: 'course' }],
-    uploaded_by: 'tester',
-    document_date: '2024-07-18',
-  };
-  const testPDFDoc4 = {
-    document_id: 'test-pdf-4',
-    major_head: 'Test',
-    minor_head: 'PDF4',
-    file_url: 'https://abvv.ac.in/api/uploads/notifications/1721134043980.pdf',
-    tags: [{ tag_name: 'notification' }],
-    uploaded_by: 'tester',
-    document_date: '2024-07-19',
-  };
 
-  const testDocuments = useMemo(() => {
-    // Prepend the test PDFs to the documents list for testing
-    return [testPDFDoc, testPDFDoc2, testPDFDoc3, testPDFDoc4, ...documents];
-  }, [documents]);
+  // Hybrid filtering: in-memory filter on top of backend results, with testPDFDoc always included at the top
+  const filteredDocuments = [
+    testPDFDoc,
+    ...documents.filter(doc => {
+      if (majorHead && (doc.major_head || '').toLowerCase() !== majorHead.toLowerCase()) return false;
+      if (minorHead && (doc.minor_head || '').toLowerCase() !== minorHead.toLowerCase()) return false;
+      if (uploadedBy && (doc.uploaded_by || '').toLowerCase() !== uploadedBy.toLowerCase()) return false;
+      if (tags) {
+        const tagArr = tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+        if (tagArr.length > 0) {
+          const docTags = (doc.tags || []).map(tagObj => (tagObj.tag_name || '').toLowerCase());
+          if (!tagArr.every(tag => docTags.includes(tag))) return false;
+        }
+      }
+      if (fromDate) {
+        if (!doc.document_date || new Date(doc.document_date) < new Date(fromDate)) return false;
+      }
+      if (toDate) {
+        if (!doc.document_date || new Date(doc.document_date) > new Date(toDate)) return false;
+      }
+      return true;
+    })
+  ];
 
   // Fetch all documents on mount
   useEffect(() => {
+    fetchDocumentsWithFilters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Helper to fetch documents with current filter state
+  const fetchDocumentsWithFilters = () => {
     const payload = {
-      major_head: '',
-      minor_head: '',
-      from_date: '',
-      to_date: '',
-      tags: [{ "tag_name": "" }, { "tag_name": "" }],
-      uploaded_by: '',
+      major_head: majorHead,
+      minor_head: minorHead,
+      from_date: fromDate,
+      to_date: toDate,
+      tags: tags
+        ? tags.split(',').map(tag => ({ tag_name: tag.trim() }))
+        : [{ tag_name: "" }, { tag_name: "" }],
+      uploaded_by: uploadedBy,
       start: 0,
       length: 200,
       filterId: '',
       search: { value: '' },
     };
     dispatch(searchDocumentEntry(payload));
-  }, [dispatch]);
+  };
 
- // Fixed handlePreview function
-const handlePreview = async (doc) => {
-  setPreviewDoc(doc);
-  setPreviewVisible(true);
-  
-  // If it's a PDF, download it first
-  if (doc.file_url && doc.file_url.match(/\.pdf$/i)) {
-    setIsPdfLoading(true);
-    try {
-      const localPath = RNFetchBlob.fs.dirs.DocumentDir + '/temp_preview.pdf';
-      
-      // Updated configuration to fix SSL issues
-      await RNFetchBlob.config({
-        path: localPath,
-        // Remove trusty: true as it's causing the SSL issue
-        // Add these configurations instead:
-        trusty: false, // Explicitly set to false
-        indicator: true, // Show download indicator
-        overwrite: true, // Overwrite existing file
-      }).fetch('GET', doc.file_url, {
-        // Add headers if needed for authentication
-        // 'Authorization': 'Bearer your-token',
-        'Accept': 'application/pdf',
-      });
-      
-      setLocalPdfPath('file://' + localPath);
-    } catch (e) {
-      console.log('PDF Download Error:', e);
-      Alert.alert('PDF Download Error', 'Failed to download PDF for preview. Please check your internet connection.');
-      setLocalPdfPath(null);
-    }
-    setIsPdfLoading(false);
-  } else {
-    setLocalPdfPath(null);
-  }
-};
+  // Apply filters and fetch from backend
+  const applyFilters = () => {
+    setFilterVisible(false);
+    fetchDocumentsWithFilters();
+  };
 
-// Also fix your handleDownload function to avoid similar issues:
+  // Clear filters and fetch all documents
+  const clearFilters = () => {
+    setMajorHead('');
+    setMinorHead('');
+    setFromDate('');
+    setToDate('');
+    setTags('');
+    setUploadedBy('');
+    setFilterVisible(false);
+    // Fetch all documents again
+    dispatch(searchDocumentEntry({
+      major_head: '',
+      minor_head: '',
+      from_date: '',
+      to_date: '',
+      tags: [{ tag_name: "" }, { tag_name: "" }],
+      uploaded_by: '',
+      start: 0,
+      length: 200,
+      filterId: '',
+      search: { value: '' },
+    }));
+  };
+
+  // Add refreshing state
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Add handleRefresh function
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    fetchDocumentsWithFilters();
+    setRefreshing(false);
+  };
+
+  // Also fix your handleDownload function to avoid similar issues:
 const handleDownloadFixed = async (doc) => {
   try {
     const fileUrl = doc.file_url;
@@ -289,6 +273,35 @@ const handleDownloadFixed = async (doc) => {
     // }
   };
 
+  // Preview handler for images and PDFs
+  const handlePreview = async (doc) => {
+    setPreviewDoc(doc);
+    setPreviewVisible(true);
+    // If it's a PDF, download it first for local preview
+    if (doc.file_url && doc.file_url.match(/\.pdf$/i)) {
+      setIsPdfLoading(true);
+      try {
+        const localPath = RNFetchBlob.fs.dirs.DocumentDir + '/temp_preview.pdf';
+        await RNFetchBlob.config({
+          path: localPath,
+          trusty: false,
+          indicator: true,
+          overwrite: true,
+        }).fetch('GET', doc.file_url, {
+          'Accept': 'application/pdf',
+        });
+        setLocalPdfPath('file://' + localPath);
+      } catch (e) {
+        console.log('PDF Download Error:', e);
+        Alert.alert('PDF Download Error', 'Failed to download PDF for preview. Please check your internet connection.');
+        setLocalPdfPath(null);
+      }
+      setIsPdfLoading(false);
+    } else {
+      setLocalPdfPath(null);
+    }
+  };
+
   // Date picker handlers
   const handleFromDateChange = (event, selectedDate) => {
     setShowFromDatePicker(Platform.OS === 'ios');
@@ -303,28 +316,6 @@ const handleDownloadFixed = async (doc) => {
   const MINOR_HEADS = {
     Personal: ['John', 'Tom', 'Emily'],
     Professional: ['Accounts', 'HR', 'IT', 'Finance'],
-  };
-
-  // Add refreshing state
-  const [refreshing, setRefreshing] = useState(false);
-
-  // Add handleRefresh function
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    const payload = {
-      major_head: '',
-      minor_head: '',
-      from_date: '',
-      to_date: '',
-      tags: [{ "tag_name": "" }, { "tag_name": "" }],
-      uploaded_by: '',
-      start: 0,
-      length: 200,
-      filterId: '',
-      search: { value: '' },
-    };
-    await dispatch(searchDocumentEntry(payload));
-    setRefreshing(false);
   };
 
   // Render document item
@@ -501,7 +492,7 @@ const handleDownloadFixed = async (doc) => {
               {(MINOR_HEADS[majorHead] || []).map(o => <Picker.Item key={o} label={o} value={o} />)}
             </Picker>
             {/* Date Pickers */}
-            <TouchableOpacity onPress={() => setShowFromDatePicker(true)} style={[styles.input, styles.modalInput, { justifyContent: 'center' }]}>
+            <TouchableOpacity onPress={() => setShowFromDatePicker(true)} style={[styles.input, styles.modalInput, { justifyContent: 'center' }]}> 
               <Text style={{ color: fromDate ? '#333' : '#aaa' }}>{fromDate ? fromDate : 'From Date'}</Text>
             </TouchableOpacity>
             {showFromDatePicker && (
@@ -512,7 +503,7 @@ const handleDownloadFixed = async (doc) => {
                 onChange={handleFromDateChange}
               />
             )}
-            <TouchableOpacity onPress={() => setShowToDatePicker(true)} style={[styles.input, styles.modalInput, { justifyContent: 'center' }]}>
+            <TouchableOpacity onPress={() => setShowToDatePicker(true)} style={[styles.input, styles.modalInput, { justifyContent: 'center' }]}> 
               <Text style={{ color: toDate ? '#333' : '#aaa' }}>{toDate ? toDate : 'To Date'}</Text>
             </TouchableOpacity>
             {showToDatePicker && (
@@ -530,21 +521,21 @@ const handleDownloadFixed = async (doc) => {
               onChangeText={setTags}
               style={[styles.input, styles.modalInput]}
             />
+            {/* Uploaded By Input */}
+            <TextInput
+              placeholder="Uploaded By"
+              value={uploadedBy}
+              onChangeText={setUploadedBy}
+              style={[styles.input, styles.modalInput]}
+            />
             <View style={styles.modalButtonRow}>
-              <TouchableOpacity onPress={() => {
-                setMajorHead('');
-                setMinorHead('');
-                setFromDate('');
-                setToDate('');
-                setTags('');
-                setUploadedBy('');
-              }} style={[styles.modalButton, styles.modalButtonOutline]}>
+              <TouchableOpacity onPress={clearFilters} style={[styles.modalButton, styles.modalButtonOutline]}>
                 <Text style={[styles.modalButtonText, styles.modalButtonTextOutline]}>Clear Filters</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setFilterVisible(false)} style={[styles.modalButton, styles.modalButtonOutline]}>
                 <Text style={[styles.modalButtonText, styles.modalButtonTextOutline]}>Close</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setFilterVisible(false)} style={styles.modalButton}>
+              <TouchableOpacity onPress={applyFilters} style={styles.modalButton}>
                 <Text style={styles.modalButtonText}>Apply</Text>
               </TouchableOpacity>
             </View>
@@ -558,7 +549,7 @@ const handleDownloadFixed = async (doc) => {
         <ActivityIndicator size="large" color="#3FB1C6" style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={testDocuments}
+          data={filteredDocuments}
           keyExtractor={item => item.document_id?.toString() || Math.random().toString()}
           numColumns={2}
           contentContainerStyle={styles.list}
