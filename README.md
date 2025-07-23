@@ -23,8 +23,8 @@ The app allows users to securely log in via OTP, upload documents with detailed 
 
 1. **Clone the repository**
     ```http
-    git clone https://github.com/your-github-repo-url-here.git
-    cd DMSApp
+    git clone https://github.com/your-github-repo-url-here.git](https://github.com/dharmeshdarshan08/react-native-docmanager.git
+    cd react-native-docmanager
     ```
 
 2. **Clean old dependencies/builds**
