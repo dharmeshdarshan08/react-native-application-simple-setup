@@ -24,7 +24,6 @@
     "jwt-decode": "^4.0.0",
     "react": "19.1.0",
     "react-native": "0.80.1",
-    "react-native-async-storage": "^0.0.1",
     "react-native-blob-util": "^0.22.2",
     "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "^2.27.1",
